@@ -19,31 +19,60 @@ typedef enum
     INVALID_RECORD_TYPE,
     INVALID_LINE_LENGTH,
     COUNT_INCORRECT,
-    /*DATA_LIMIT_EXCEEDED,*/
     CHECKSUM_INCORRECT,
     S0_ADDRESS_NONZERO,
     LINE_COUNT_MISMATCH,
 } parseID;
 
+/* Struct store 2 value refer limits of an object */
 struct range
 {
     uint8_t min, max;
 };
 
+/***************************************************************************************************
+ * PROTOTYPE
+ **************************************************************************************************/
+/**
+ * @brief [Function to analyze a record]
+ * 
+ * @param record [Pointer to the record string]
+ * @return [The an ID, which indicates analysis result]
+ */
 parseID analyzeRecord(char *record);
-void handleError(parseID result);
+
+/**
+ * @brief [Show the result in text]
+ * 
+ * @param result [The error code]
+ * @return [nothing]
+ */
+void exportResult(parseID result);
+
+/**
+ * @brief [Convert a pair of Hexa character to one byte value]
+ * 
+ * @param first [First Hexa character]
+ * @param second [Second Hexa character]
+ * 
+ * @return [The value in decimal]
+ */
 uint8_t hexPairToDec(char first, char second);
 
+/***************************************************************************************************
+ * CODE
+ **************************************************************************************************/
 int main(void)
 {
-    char SrecFileName[50], curSrec[80];
-    FILE *SrecDoc = NULL;
-    uint32_t lineIndex = 0;
-    parseID curParseResult;
+    char SrecFileName[50], curSrec[80];    /* Path of the SREC file and current record data */
+    FILE *SrecDoc = NULL;    /* Pointer to the SREC file data after open */
+    uint32_t lineIndex = 0;    /* Variable denote the index of current line */
+    parseID curParseResult;    /* Current record's parse result */
     
     /* Gets the file name and open it */
     printf("Enter the SREC file name (extension must be included): ");
     fgets(SrecFileName, 50, stdin);
+    /* Remove the LF at the end of the input data */
     SrecFileName[strlen(SrecFileName) - 1] = 0;
     SrecDoc = (FILE *) fopen(SrecFileName, "r");
 
@@ -58,20 +87,19 @@ int main(void)
     /* Handle S-records one by one */
     while (TRUE)
     {
-        /* Increase the line index
-           "Clear" old Srec data, gets new one
-           Reset parse result */
-        curParseResult = UNDEFINED;
-        curSrec[0] = 0;
-        lineIndex++;
-        fgets(curSrec, 80, SrecDoc);
+        curParseResult = UNDEFINED;    /* Reset the parse result */
+        curSrec[0] = 0;    /* "Clear" old data */
+        lineIndex++;    /* Increase the index by one unit */
+        fgets(curSrec, 80, SrecDoc);    /* Get new data*/
 
         /* Check if it is the EOF or not */
         if (curSrec[strlen(curSrec) - 1] != 10)
         {
+            /* Ignore everything left of the line */
             fscanf(SrecDoc, "%*[^\n]");
             if (fgetc(SrecDoc) == EOF)
             {
+                /* If not end of file then it's an reading error */
                 if (!feof(SrecDoc))
                 {
                     printf("Error while reading file!\n");
@@ -80,16 +108,18 @@ int main(void)
             }
         }
 
+        /* Analyze new record*/
         curParseResult = analyzeRecord(curSrec);
 
         /* Show the parse result */
         printf("Line %lu: ", lineIndex);
-        handleError(curParseResult);
+        exportResult(curParseResult);
     }
 
-    //Close the file when done
+    /* Close the file when done */
     fclose(SrecDoc);
     SrecDoc = NULL;
+    /* Show ending sign */
     printf("Finished!\n");
     getchar();
     return 0;
@@ -97,14 +127,14 @@ int main(void)
 
 parseID analyzeRecord(char *record)
 {
-    static range recordLengthLimit[10] = {{10, 70}, {12, 74}, {14, 76}, {16, 78}, {0, 0}, {10, 10}, {0, 0}, {14, 14}, {12, 12}, {10, 10}};
-    static uint16_t lineCount = 0;
+    static const range s_RecordLengthLimit[10] = {{10, 70}, {12, 74}, {14, 76}, {16, 78}, {0, 0}, {10, 10}, {0, 0}, {14, 14}, {12, 12}, {10, 10}};
+    static uint16_t s_LineCount = 0;
     size_t recordLen = strlen(record);
     uint32_t temp;
     /* Increase the S123 count one unit */
     if (record[0] == 'S' && record[1] > '0' && record[1] < '4')
     {
-        lineCount++;
+        s_LineCount++;
     }
     /* Check for Record length limit */
     if (recordLen > 79 || (recordLen == 79 && record[78] != 10))
@@ -135,7 +165,7 @@ parseID analyzeRecord(char *record)
         return INVALID_RECORD_TYPE;
     }
     /* Invalid line length? */
-    if (recordLen % 2 || recordLen < recordLengthLimit[record[1] - 48].min || recordLen > recordLengthLimit[record[1] - 48].max)
+    if (recordLen % 2 || recordLen < s_RecordLengthLimit[record[1] - 48].min || recordLen > s_RecordLengthLimit[record[1] - 48].max)
     {
         return INVALID_LINE_LENGTH;
     }
@@ -146,10 +176,13 @@ parseID analyzeRecord(char *record)
     }
     /* Check sum is correct, isn't it? */
     temp = 0;
+    /* Calculate the sum */
     for (size_t i = 2; i < recordLen - 2; i += 2)
     {
+        /* Add each pair value to temp */
         temp += hexPairToDec(record[i], record[i + 1]);
     }
+    /* Compare the checksum data */
     if (hexPairToDec(record[recordLen - 2], record[recordLen - 1]) != (0xFF - (temp & 0xFF)))
     {
         return CHECKSUM_INCORRECT;
@@ -164,7 +197,7 @@ parseID analyzeRecord(char *record)
     {
         temp = (hexPairToDec(record[4], record[5]) << 8);
         temp |= hexPairToDec(record[6], record[7]);
-        if (temp != lineCount)
+        if (temp != s_LineCount)
         {
             return LINE_COUNT_MISMATCH;
         }
@@ -172,7 +205,7 @@ parseID analyzeRecord(char *record)
     return OK;
 }
 
-void handleError(parseID result)
+void exportResult(parseID result)
 {
     switch (result)
     {
@@ -194,9 +227,6 @@ void handleError(parseID result)
         case COUNT_INCORRECT:
             printf("Value of the count field mismatches the length of remaining data.\n");
             break;
-        /*case DATA_LIMIT_EXCEEDED:
-            printf("The data field's length exceeded the limit!\n");
-            break;*/
         case CHECKSUM_INCORRECT:
             printf("Checksum value is incorrect!\n");
             break;
