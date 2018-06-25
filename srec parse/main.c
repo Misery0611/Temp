@@ -30,6 +30,8 @@ struct range
     uint8_t min, max;
 };
 
+FILE *reportFile = NULL;    /* Pointer to the output file */
+
 /***************************************************************************************************
  * PROTOTYPE
  **************************************************************************************************/
@@ -65,16 +67,18 @@ uint8_t hexPairToDec(char first, char second);
 int main(void)
 {
     char SrecFileName[50], curSrec[80];    /* Path of the SREC file and current record data */
-    FILE *SrecDoc = NULL;    /* Pointer to the SREC file data after open */
+    FILE *SrecDoc = NULL;    /* Pointer to the SREC file data*/
     uint32_t lineIndex = 0;    /* Variable denote the index of current line */
     parseID curParseResult;    /* Current record's parse result */
-    
+
     /* Gets the file name and open it */
     printf("Enter the SREC file name (extension must be included): ");
     fgets(SrecFileName, 50, stdin);
     /* Remove the LF at the end of the input data */
     SrecFileName[strlen(SrecFileName) - 1] = 0;
     SrecDoc = (FILE *) fopen(SrecFileName, "r");
+    /* Open (create if not exist) the report file */
+    reportFile = fopen("report.txt", "a+");
 
     /* Check if manage to open file or not */
     if (SrecDoc == NULL)
@@ -83,7 +87,16 @@ int main(void)
         getchar();
         return 0;
     }
-
+    /* Ensure opening report file is successful */
+    if (reportFile == NULL)
+    {
+        printf("Faild to load report file!\n");
+        getchar();
+        return 0;
+    }
+    /* Clarify report file */
+    fprintf(reportFile, "%s\n", SrecFileName);
+    printf("Processing!\n");
     /* Handle S-records one by one */
     while (TRUE)
     {
@@ -102,7 +115,7 @@ int main(void)
                 /* If not end of file then it's an reading error */
                 if (!feof(SrecDoc))
                 {
-                    printf("Error while reading file!\n");
+                    fprintf(reportFile, "Error while reading file!\n");
                 }
                 break;
             }
@@ -112,22 +125,26 @@ int main(void)
         curParseResult = analyzeRecord(curSrec);
 
         /* Show the parse result */
-        printf("Line %lu: ", lineIndex);
+        fprintf(reportFile, "Line %lu: ", lineIndex);
         exportResult(curParseResult);
     }
 
+    /* Show ending sign */
+    printf("Finished!\n");
+    fprintf(reportFile, "Done!\n");
     /* Close the file when done */
     fclose(SrecDoc);
     SrecDoc = NULL;
-    /* Show ending sign */
-    printf("Finished!\n");
+    fclose(reportFile);
+    reportFile = NULL;
+    /* Wait for a respond */
     getchar();
     return 0;
 }
 
 parseID analyzeRecord(char *record)
 {
-    static const range s_RecordLengthLimit[10] = {{10, 70}, {12, 74}, {14, 76}, {16, 78}, {0, 0}, {10, 10}, {0, 0}, {14, 14}, {12, 12}, {10, 10}};
+    static const range s_RecordLengthLimit[10] = {{10, 74}, {12, 74}, {14, 76}, {16, 78}, {0, 0}, {10, 10}, {0, 0}, {14, 14}, {12, 12}, {10, 10}};
     static uint16_t s_LineCount = 0;
     size_t recordLen = strlen(record);
     uint32_t temp;
@@ -154,7 +171,7 @@ parseID analyzeRecord(char *record)
     /* Detect if there is invalid character */
     for (size_t i = 1; record[i]; i++)
     {
-        if (record[i] < 48 || record[i] > 90 || (record[i] > 57 && record[i] < 65))
+        if (record[i] < 48 || record[i] > 70 || (record[i] > 57 && record[i] < 65))
         {
             return UNACCEPTABLE_CHARACTER;
         }
@@ -210,34 +227,34 @@ void exportResult(parseID result)
     switch (result)
     {
         case OK:
-            printf("OK!\n");
+            fprintf(reportFile, "OK!\n");
             break;
         case UNACCEPTABLE_CHARACTER:
-            printf("Record contains invalid character!\n");
+            fprintf(reportFile, "Record contains invalid character!\n");
             break;
         case LINE_NOT_STARTING_WITH_S:
-            printf("Record is not starting with S!\n");
+            fprintf(reportFile, "Record is not starting with S!\n");
             break;
         case INVALID_RECORD_TYPE:
-            printf("Unknown Record Type! (Supporting Types: S0, S1, S2, S3, S5, S7, S8, S9)\n");
+            fprintf(reportFile, "Unknown Record Type! (Supporting Types: S0, S1, S2, S3, S5, S7, S8, S9)\n");
             break;
         case INVALID_LINE_LENGTH:
-            printf("Line has an invalid length!\n");
+            fprintf(reportFile, "Line has an invalid length!\n");
             break;
         case COUNT_INCORRECT:
-            printf("Value of the count field mismatches the length of remaining data.\n");
+            fprintf(reportFile, "Value of the count field mismatches the length of remaining data.\n");
             break;
         case CHECKSUM_INCORRECT:
-            printf("Checksum value is incorrect!\n");
+            fprintf(reportFile, "Checksum value is incorrect!\n");
             break;
         case S0_ADDRESS_NONZERO:
-            printf("The address field of S0 Record is not filled with zero!\n");
+            fprintf(reportFile, "The address field of S0 Record is not filled with zero!\n");
             break;
         case LINE_COUNT_MISMATCH:
-            printf("Transmitted lines counts conflicted! (S5 type)\n");
+            fprintf(reportFile, "Transmitted lines counts conflicted! (S5 type)\n");
             break;
         default:
-            printf("Undefined Error!\n");
+            fprintf(reportFile, "Undefined Error!\n");
     }
 }
 
